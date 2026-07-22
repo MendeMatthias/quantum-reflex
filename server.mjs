@@ -57,17 +57,22 @@ if (SECRET.length < 32) {
 }
 
 // Boot-time apex/www sanity check (non-fatal): warn if the configured origin
-// itself redirects — the classic bad_origin trap.
-try {
-  const head = await fetch(ORIGIN, { method: "HEAD", redirect: "manual" });
-  const loc = head.headers.get("location");
-  if (head.status >= 300 && head.status < 400 && loc) {
-    console.warn(
-      `WARNING: QID_ORIGIN ${ORIGIN} redirects (${head.status}) to ${loc}. ` +
-      `Set QID_ORIGIN to the FINAL host users land on, or /qid/verify rejects with bad_origin.`
-    );
-  }
-} catch { /* offline at boot: skip */ }
+// itself redirects — the classic bad_origin trap. Fire-and-forget with a short
+// timeout: when QID_ORIGIN points back at THIS app (custom domain), awaiting it
+// would deadlock startup (the fetch waits on a server that hasn't listen()ed
+// yet), so it must never block or hang.
+(async () => {
+  try {
+    const head = await fetch(ORIGIN, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(4000) });
+    const loc = head.headers.get("location");
+    if (head.status >= 300 && head.status < 400 && loc) {
+      console.warn(
+        `WARNING: QID_ORIGIN ${ORIGIN} redirects (${head.status}) to ${loc}. ` +
+        `Set QID_ORIGIN to the FINAL host users land on, or /qid/verify rejects with bad_origin.`
+      );
+    }
+  } catch { /* offline / self-referential / slow: skip */ }
+})();
 
 // bun:sqlite (this project targets bun). node:sqlite fallback keeps it running
 // under Node 22+ too. Both give a handle with .exec/.prepare -> .run/.get/.all.
