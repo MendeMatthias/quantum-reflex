@@ -1,0 +1,23 @@
+# Caddy vhost for play.qid.dev — terminates TLS and proxies everything to the
+# single Quantum Reflex server on localhost. ONE origin: the page, /qid/*, and
+# the leaderboard API all answer on https://play.qid.dev, which is what makes
+# the first-party HttpOnly qID session cookie work.
+#
+# Append this to /etc/caddy/Caddyfile (or drop in /etc/caddy/conf.d/), then:
+#   sudo systemctl reload caddy
+#
+# Caddy fetches and renews the TLS cert automatically once play.qid.dev's DNS
+# points at this box.
+
+play.qid.dev {
+	encode zstd gzip
+
+	# Forward the browser's Origin/Host untouched. The server binds proofs and
+	# the CSRF check to QID_ORIGIN=https://play.qid.dev, so the origin the wallet
+	# and browser see must stay exactly that. A transparent proxy is correct; a
+	# rewrite that changes the origin is exactly what breaks qID.
+	reverse_proxy 127.0.0.1:8899 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

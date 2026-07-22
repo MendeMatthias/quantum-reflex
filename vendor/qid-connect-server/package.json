@@ -1,0 +1,23 @@
+{
+  "name": "@qid/connect-server",
+  "version": "1.5.2",
+  "description": "qID Connect server SDK: issue challenges, verify post-quantum ownership proofs, create accounts by BTX address, issue sessions.",
+  "type": "module",
+  "private": true,
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./express": "./src/middleware.js",
+    "./next": "./src/next.js",
+    "./verifier": "./src/verifier/btx-ownership-verify.js"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@noble/post-quantum": "^0.6.1",
+    "@noble/hashes": "^2.2.0",
+    "@scure/base": "^2.2.0"
+  }
+}

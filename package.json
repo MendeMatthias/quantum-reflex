@@ -1,0 +1,19 @@
+{
+  "name": "quantum-reflex",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Quantum Reflex: a reaction-time game that showcases qID Connect. Play in 10 seconds, sign in with your BTX wallet, land on a global leaderboard keyed by your address. The address is the account.",
+  "scripts": {
+    "start": "bun server.mjs",
+    "dev": "QID_ORIGIN=http://localhost:8899 QID_SESSION_SECRET=dev-only-secret-do-not-use-in-prod-32c QID_DB=./data/dev.sqlite bun server.mjs",
+    "test": "bun test/e2e.mjs",
+    "test:relics": "bun test/relic-live.mjs"
+  },
+  "dependencies": {
+    "@noble/post-quantum": "0.6.1",
+    "@noble/hashes": "2.2.0",
+    "@scure/base": "2.2.0"
+  },
+  "license": "MIT"
+}

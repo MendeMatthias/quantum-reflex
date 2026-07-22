@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#0a0e1a" />
+<title>Quantum Reflex</title>
+<meta name="description" content="How fast are your reflexes? Can you out-react a quantum computer? Play 5 rounds, sign in with your BTX wallet, land on the global leaderboard." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --panel: #121829;
+    --panel-2: #0e1424;
+    --line: #212a44;
+    --ink: #eaeefb;
+    --muted: #8b97b6;
+    --accent: #7c5cff;
+    --accent-2: #37e6ff;
+    --gold: #ffd15c;
+    --wait-bg: #2a0d15;
+    --wait: #ff3355;
+    --go-bg: #06c987;
+    --go-ink: #032116;
+    --early-bg: #3a1020;
+    --radius: 22px;
+    --shadow: 0 18px 60px rgba(0,0,0,.5);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #17203a 0%, transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+
+  header { text-align: center; padding: 28px 4px 14px; }
+  h1 {
+    margin: 0;
+    font-size: clamp(30px, 8vw, 44px);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    background: linear-gradient(100deg, var(--accent-2), var(--accent) 70%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .tag { margin: 8px auto 0; max-width: 30ch; color: var(--muted); font-size: 15px; }
+
+  /* The reaction stage. Background flips are INSTANT (no transition) so the
+     green signal is not delayed and the measured ms is honest. */
+  .stage {
+    position: relative;
+    width: 100%;
+    min-height: 46dvh;
+    margin-top: 18px;
+    border-radius: var(--radius);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    display: grid; place-items: center; text-align: center;
+    cursor: pointer; user-select: none; -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: transform .06s ease;
+    overflow: hidden;
+  }
+  .stage:active { transform: scale(.992); }
+  .stage-inner { padding: 22px; }
+  .big { font-size: clamp(30px, 9vw, 46px); font-weight: 800; letter-spacing: -.01em; }
+  .sub { margin-top: 8px; color: var(--muted); font-size: 15px; min-height: 1.4em; }
+  .big .ms { font-variant-numeric: tabular-nums; }
+
+  .stage.state-idle .sub { color: var(--muted); }
+  .stage.state-wait  { background: var(--wait-bg); border-color: #5a1626; }
+  .stage.state-wait  .big { color: var(--wait); }
+  .stage.state-wait  .sub { color: #ffa9b6; }
+  .stage.state-go    { background: var(--go-bg); border-color: transparent; box-shadow: 0 0 0 4px rgba(6,201,135,.25), 0 18px 70px rgba(6,201,135,.35); }
+  .stage.state-go    .big { color: var(--go-ink); }
+  .stage.state-early { background: var(--early-bg); border-color: #5a1626; }
+  .stage.state-early .big { color: #ff6b83; font-size: clamp(22px, 6.5vw, 30px); }
+  .stage.state-round .big { color: var(--accent-2); }
+  .stage.state-done  .big { color: var(--ink); font-size: clamp(24px, 7vw, 34px); }
+
+  .dots { display: flex; gap: 8px; justify-content: center; margin: 14px 0 2px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #26304e; transition: background .2s, transform .2s; }
+  .dot.on { background: var(--accent-2); }
+  .dot.cur { background: var(--accent); transform: scale(1.35); }
+
+  /* Summary card */
+  .card {
+    margin-top: 16px; padding: 18px; border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--line);
+  }
+  .avg { text-align: center; font-size: 18px; color: var(--muted); }
+  .avg b { color: var(--ink); font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .avg .unit { font-size: 18px; color: var(--muted); font-weight: 600; }
+  .rankline { text-align: center; color: var(--accent-2); margin-top: 4px; font-size: 15px; }
+  .rankref { color: var(--muted); }
+  .rounds { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 14px 0 4px; }
+  .pill { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); background: #0c1222; border: 1px solid var(--line); padding: 5px 10px; border-radius: 999px; }
+  .pill.best { color: var(--go-bg); border-color: #1c6b4f; }
+
+  .claim { margin-top: 12px; display: grid; gap: 10px; }
+  .cta {
+    appearance: none; border: 0; cursor: pointer;
+    font: inherit; font-weight: 700; color: #fff;
+    padding: 14px 18px; border-radius: 14px;
+    background: linear-gradient(100deg, var(--accent), #a15cff);
+    box-shadow: 0 10px 30px rgba(124,92,255,.35);
+  }
+  .cta:active { transform: translateY(1px); }
+  .cta.secondary { background: #1a2238; color: var(--ink); box-shadow: none; border: 1px solid var(--line); }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  input.name {
+    width: 100%; font: inherit; color: var(--ink);
+    background: #0c1222; border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px;
+  }
+  input.name::placeholder { color: #55618a; }
+  .youare { text-align: center; font-weight: 700; color: var(--gold); min-height: 1.2em; }
+  .hint { text-align: center; color: var(--muted); font-size: 13px; }
+
+  /* Relic-name chips: names the player forged into a BTX relic they hold. */
+  .relic-label { text-align: center; color: var(--accent-2); font-size: 13px; margin-bottom: 2px; }
+  .relic-label b { color: var(--ink); font-weight: 700; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .chip {
+    appearance: none; cursor: pointer; font: inherit; font-size: 14px; font-weight: 600;
+    color: var(--ink); background: #0c1222; border: 1px solid var(--line);
+    border-radius: 999px; padding: 8px 14px; display: inline-flex; align-items: baseline; gap: 7px;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip.sel { background: rgba(124,92,255,.18); border-color: var(--accent); color: #fff; }
+  .chip .coll { color: var(--muted); font-size: 11px; font-weight: 600; }
+  .chip.sel .coll { color: #c7bcff; }
+
+  #account:not(:empty) { margin-top: 16px; display: flex; justify-content: center; }
+
+  /* Leaderboard */
+  .board { margin-top: 22px; }
+  .board h2 { font-size: 16px; margin: 0 0 4px; letter-spacing: .02em; }
+  .board .meta { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  td.rank, td.ms { font-variant-numeric: tabular-nums; }
+  td.rank { width: 44px; color: var(--muted); }
+  td.ms { text-align: right; font-weight: 700; }
+  td.who { max-width: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); font-size: 13px; }
+  tr.me td { background: rgba(124,92,255,.12); }
+  tr.me td:first-child { border-radius: 8px 0 0 8px; }
+  tr.me td:last-child { border-radius: 0 8px 8px 0; }
+  tr.top1 td.rank { color: var(--gold); }
+  .empty { color: var(--muted); text-align: center; padding: 18px; }
+
+  footer { text-align: center; color: #5b688c; font-size: 12px; margin-top: 26px; }
+  footer b { color: var(--muted); font-weight: 600; }
+  a { color: var(--accent-2); text-decoration: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Quantum Reflex</h1>
+    <p class="tag">How fast are your reflexes? Can you out-react a quantum computer?</p>
+  </header>
+
+  <div id="stage" class="stage state-idle" role="button" tabindex="0" aria-label="Reaction stage. Activate to start.">
+    <div class="stage-inner">
+      <div id="big" class="big" aria-live="assertive">Tap to start</div>
+      <div id="sub" class="sub">5 rounds. Tap the instant it turns green.</div>
+    </div>
+  </div>
+  <div id="dots" class="dots" aria-hidden="true"></div>
+
+  <section id="summary" class="card" hidden>
+    <div class="avg"><span id="avgMs">0</span><span class="unit"> ms avg</span></div>
+    <div id="rankLine" class="rankline"></div>
+    <div id="rounds" class="rounds"></div>
+    <div class="claim">
+      <div id="signin" hidden></div>
+      <div id="claimWrap" class="claim">
+        <div id="relicWrap" hidden>
+          <div class="relic-label">Claim under the name you forged into your relic:</div>
+          <div id="relicChips" class="chips"></div>
+        </div>
+        <input id="nameInput" class="name" maxlength="32" placeholder="Name for the board (optional)" autocomplete="off" />
+        <button id="claimBtn" class="cta">Sign in with qID to claim your spot</button>
+        <button id="submitBtn" class="cta" hidden>Add me to the leaderboard</button>
+      </div>
+      <div id="youAre" class="youare"></div>
+      <button id="playAgain" class="cta secondary">Play again to beat your time</button>
+      <div id="qidNote" class="hint" hidden></div>
+    </div>
+  </section>
+
+  <div id="account"></div>
+
+  <section class="board">
+    <h2>Global leaderboard</h2>
+    <div id="boardMeta" class="meta">Loading…</div>
+    <table>
+      <thead><tr><th>#</th><th>Player</th><th style="text-align:right">Best</th></tr></thead>
+      <tbody id="boardBody"></tbody>
+    </table>
+  </section>
+
+  <footer>
+    Sign in with <b>qID</b>. The address is the account. No email, no password.<br />
+    Post-quantum login for BTX, by <a href="https://qid.dev" target="_blank" rel="noopener">qid.dev</a>.
+  </footer>
+</div>
+
+<script type="module">
+  // ------------------------------------------------------------------ config
+  const ROUNDS = 5;
+  const MIN_DELAY = 1500, MAX_DELAY = 4500;   // 1.5 to 4.5s before green
+  const RESULT_HOLD = 900;                     // show a round's ms before the next
+  const SERVER_MIN = 80, SERVER_MAX = 2000;    // matches the /score clamp
+
+  // -------------------------------------------------------------------- refs
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), big = $("big"), sub = $("sub"), dots = $("dots");
+  const summary = $("summary"), avgMs = $("avgMs"), rankLine = $("rankLine"), roundsEl = $("rounds");
+  const claimWrap = $("claimWrap"), claimBtn = $("claimBtn"), nameInput = $("nameInput");
+  const submitBtn = $("submitBtn"), relicWrap = $("relicWrap"), relicChips = $("relicChips");
+  const youAre = $("youAre"), playAgain = $("playAgain"), qidNote = $("qidNote");
+  const boardMeta = $("boardMeta"), boardBody = $("boardBody");
+
+  // ------------------------------------------------------------------- state
+  const S = { IDLE: 0, WAIT: 1, GO: 2, EARLY: 3, RESULT: 4, DONE: 5 };
+  let state = S.IDLE;
+  let round = 0;
+  let times = [];
+  let greenAt = 0;
+  let armTimer = null, holdTimer = null;
+  let pendingScore = null;
+  let signedInAddress = null;
+  let relicPromise = null;   // memoized fetch of the player's forged relic names
+
+  // -------------------------------------------------------------------- game
+  function setStage(cls, bigText, subText) {
+    stage.className = "stage " + cls;
+    big.textContent = bigText;
+    sub.textContent = subText || "";
+  }
+  function renderDots() {
+    dots.innerHTML = "";
+    for (let i = 0; i < ROUNDS; i++) {
+      const d = document.createElement("div");
+      d.className = "dot" + (i < times.length ? " on" : "") + (i === times.length && state !== S.DONE && state !== S.IDLE ? " cur" : "");
+      dots.appendChild(d);
+    }
+  }
+  function begin() {
+    times = []; round = 0;
+    summary.hidden = true;
+    youAre.textContent = "";
+    armRound();
+  }
+  function armRound() {
+    clearTimeout(armTimer); clearTimeout(holdTimer);
+    state = S.WAIT;
+    setStage("state-wait", "Wait for green", `Round ${round + 1} of ${ROUNDS}`);
+    renderDots();
+    const delay = MIN_DELAY + Math.random() * (MAX_DELAY - MIN_DELAY);
+    armTimer = setTimeout(goGreen, delay);
+  }
+  function goGreen() {
+    state = S.GO;
+    // Set the class first, then stamp the clock, so timing starts at the paint
+    // the user can react to. No CSS transition on the background: green is instant.
+    setStage("state-go", "TAP", "");
+    greenAt = performance.now();
+  }
+  function tooEarly() {
+    clearTimeout(armTimer);
+    state = S.EARLY;
+    setStage("state-early", "Too early, wait for it", "That round restarts");
+    holdTimer = setTimeout(armRound, RESULT_HOLD + 250);
+  }
+  function recordTap() {
+    const ms = Math.round(performance.now() - greenAt);
+    times.push(ms);
+    state = S.RESULT;
+    setStage("state-round", `${ms} ms`, round + 1 < ROUNDS ? "Nice. Next round coming up" : "Last one done");
+    renderDots();
+    holdTimer = setTimeout(() => {
+      round++;
+      if (round < ROUNDS) armRound();
+      else finish();
+    }, RESULT_HOLD);
+  }
+  function onTap() {
+    switch (state) {
+      case S.IDLE: begin(); break;
+      case S.WAIT: tooEarly(); break;
+      case S.GO: recordTap(); break;
+      // EARLY, RESULT auto-advance; DONE uses its own buttons. Ignore taps.
+    }
+  }
+
+  function finish() {
+    state = S.DONE;
+    const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+    setStage("state-done", `${avg} ms`, "Your average over 5 rounds");
+    renderDots();
+
+    avgMs.textContent = avg;
+    rankLine.innerHTML = "";
+    rankLine.append(document.createTextNode(verdict(avg) + " "));
+    const ref = document.createElement("span");
+    ref.className = "rankref";
+    ref.textContent = "Human floor is about 100 ms, average about 250 ms.";
+    rankLine.append(ref);
+
+    const best = Math.min(...times);
+    roundsEl.innerHTML = "";
+    times.forEach((t) => {
+      const p = document.createElement("span");
+      p.className = "pill" + (t === best ? " best" : "");
+      p.textContent = t + " ms";
+      roundsEl.appendChild(p);
+    });
+
+    summary.hidden = false;
+    summary.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+    // Submit path: if the average is out of the accepted range, don't post.
+    if (avg < SERVER_MIN || avg > SERVER_MAX) {
+      youAre.textContent = "That average was out of range. Play again.";
+      claimWrap.hidden = true;
+      return;
+    }
+    pendingScore = avg;
+    offerClaim();
+  }
+
+  // --------------------------------------------------------- claim + relics
+  // Once a run is submittable, decide what the claim area shows.
+  async function offerClaim() {
+    if (pendingScore == null) return;
+    claimWrap.hidden = false;
+    youAre.textContent = "";
+    if (!signedInAddress) {
+      setClaimMode("signedout");   // address (and thus relics) unknown until sign-in
+      return;
+    }
+    // Signed in: look for a name they forged into a relic they hold.
+    setClaimMode("none");
+    qidNote.hidden = false;
+    qidNote.textContent = "Reading the name you forged into your relic…";
+    let names = [];
+    try { names = (await ensureRelicNames()) || []; } catch { names = []; }
+    qidNote.hidden = true; qidNote.textContent = "";
+    if (pendingScore == null) return;   // submitted already while we waited
+    if (names.length) {
+      renderRelicChips(names);
+      if (!nameInput.value.trim()) selectRelic(0, names);   // prefill with the forged name
+      setClaimMode("choose");
+    } else {
+      setClaimMode("none");
+      submitPendingScore();             // no relic name: zero-friction auto-submit
+    }
+  }
+
+  // Show only the controls a given claim mode needs.
+  function setClaimMode(mode) {
+    const signedout = mode === "signedout";
+    const choose = mode === "choose";
+    relicWrap.hidden = !choose;
+    nameInput.hidden = !(signedout || choose);
+    claimBtn.hidden = !signedout;
+    submitBtn.hidden = !choose;
+  }
+
+  // Memoized one-shot fetch of the player's forged relic names (empty on any error).
+  function ensureRelicNames() {
+    if (!relicPromise) {
+      relicPromise = fetch("/relic-name", { credentials: "same-origin" })
+        .then((r) => r.json())
+        .then((d) => (d && d.ok && Array.isArray(d.names) ? d.names : []))
+        .catch(() => []);
+    }
+    return relicPromise;
+  }
+
+  function renderRelicChips(names) {
+    relicChips.innerHTML = "";
+    names.forEach((r, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      const n = document.createElement("span");
+      n.textContent = r.name;                       // textContent: a forged name is never HTML
+      const c = document.createElement("span");
+      c.className = "coll";
+      c.textContent = r.collectionName || "Relic";
+      b.append(n, c);
+      b.addEventListener("click", () => selectRelic(i, names));
+      relicChips.appendChild(b);
+    });
+  }
+
+  function selectRelic(i, names) {
+    nameInput.value = names[i].name;
+    [...relicChips.children].forEach((c, j) => c.classList.toggle("sel", j === i));
+  }
+
+  submitBtn.addEventListener("click", () => { setClaimMode("none"); submitPendingScore(); });
+
+  function verdict(avg) {
+    if (avg < 150) return "Superhuman reflexes.";
+    if (avg < 200) return "Faster than a blink.";
+    if (avg < 250) return "Quicker than the average human.";
+    if (avg < 300) return "Sharp, solid reflexes.";
+    if (avg < 400) return "Right around human average.";
+    return "Warm up and try again.";
+  }
+
+  // Input: pointerdown for lowest latency (earlier than click). Keyboard: Space
+  // or Enter, but not while typing a name.
+  stage.addEventListener("pointerdown", (e) => { e.preventDefault(); onTap(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.target === nameInput) return;
+    if (e.code === "Space" || e.code === "Enter") {
+      if (state === S.DONE || state === S.IDLE || state === S.WAIT || state === S.GO) {
+        e.preventDefault();
+        if (state !== S.DONE) onTap();
+      }
+    }
+  });
+  playAgain.addEventListener("click", begin);
+
+  // ------------------------------------------------------------- leaderboard
+  function fmtRow(r) {
+    const tr = document.createElement("tr");
+    if (r.mine) tr.className = "me";
+    if (r.rank === 1) tr.className = (tr.className + " top1").trim();
+
+    const rank = document.createElement("td");
+    rank.className = "rank";
+    rank.textContent = r.rank === 1 ? "★" : r.rank;
+
+    const who = document.createElement("td");
+    who.className = "who";
+    if (r.name) {
+      who.textContent = r.name;              // textContent: user input never becomes HTML
+    } else {
+      const a = document.createElement("span");
+      a.className = "addr";
+      a.textContent = r.address;
+      who.appendChild(a);
+    }
+    if (r.mine) {
+      const you = document.createElement("span");
+      you.textContent = "  (you)";
+      you.style.color = "var(--accent)";
+      you.style.fontSize = "12px";
+      who.appendChild(you);
+    }
+
+    const ms = document.createElement("td");
+    ms.className = "ms";
+    ms.textContent = r.best_ms + " ms";
+
+    tr.append(rank, who, ms);
+    return tr;
+  }
+
+  async function refreshLeaderboard() {
+    try {
+      const res = await fetch("/leaderboard?limit=50", { credentials: "same-origin" });
+      const data = await res.json();
+      boardBody.innerHTML = "";
+      if (!data.leaderboard || data.leaderboard.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 3; td.className = "empty";
+        td.textContent = "No scores yet. Be the first.";
+        tr.appendChild(td); boardBody.appendChild(tr);
+      } else {
+        for (const r of data.leaderboard) boardBody.appendChild(fmtRow(r));
+      }
+      const n = data.total_players || 0;
+      let meta = n === 1 ? "1 player" : n + " players";
+      if (data.me) meta += ` · you are #${data.me.rank}, best ${data.me.best_ms} ms`;
+      boardMeta.textContent = meta;
+    } catch {
+      boardMeta.textContent = "Leaderboard unavailable.";
+    }
+  }
+
+  async function submitPendingScore() {
+    if (pendingScore == null) return;
+    const ms = pendingScore; pendingScore = null;
+    const name = nameInput.value.trim();
+    try {
+      const res = await fetch("/score", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(name ? { ms, name } : { ms }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data && data.ok) {
+        setClaimMode("none");        // hide the name input / chips, leave the rank line
+        youAre.textContent = `You are #${data.rank} of ${data.total_players}. Best ${data.best_ms} ms.`;
+      } else if (data && data.reason === "rate_limited") {
+        setClaimMode("none");
+        youAre.textContent = "Slow down a moment, then play again.";
+      } else if (data && data.reason === "no_session") {
+        // Session expired between finishing and submitting: re-open sign-in.
+        pendingScore = ms; signedInAddress = null; offerClaim();
+      }
+    } catch { /* offline: leave the board as-is */ }
+    refreshLeaderboard();
+  }
+
+  // ---------------------------------------------------------------- qID wire
+  // The game above works with no network. qID sign-in is layered on top and
+  // degrades gracefully if the hosted widget cannot load.
+  let connect = null, account = null;
+
+  // Fires on explicit sign-in AND on page-load session restore. Records the
+  // address, prefetches the player's forged relic names, and (re)offers the
+  // claim if a run is waiting. Idempotent — safe to call from both widgets.
+  function handleSignedIn(s) {
+    signedInAddress = (s && s.address) ? s.address : (signedInAddress || true);
+    ensureRelicNames();   // warm the relic lookup while the player is still here
+    offerClaim();
+  }
+
+  try {
+    const { mountQidConnect, mountQidAccount } = await import("https://qid.dev/connect/widget.js");
+
+    account = mountQidAccount($("account"), {
+      api: "/qid",
+      onSignedIn: handleSignedIn,
+      onSignedOut: () => { signedInAddress = null; location.reload(); },
+    });
+
+    connect = mountQidConnect($("signin"), {
+      api: "/qid",
+      appName: "Quantum Reflex",
+      trigger: false,                 // we open it from the claim button
+      onSignedIn: () => { account.refresh(); handleSignedIn(); },
+    });
+
+    claimBtn.addEventListener("click", () => connect.open());
+  } catch (err) {
+    // CDN blocked/offline: keep the game fully playable, just hide sign-in.
+    console.warn("qID widget unavailable:", err);
+    claimBtn.disabled = true;
+    qidNote.hidden = false;
+    qidNote.textContent = "Sign-in is temporarily unavailable. Your run still counts locally.";
+  }
+
+  // Board on load, then a light poll so it feels live during a session.
+  renderDots();
+  refreshLeaderboard();
+  setInterval(refreshLeaderboard, 20000);
+</script>
+</body>
+</html>

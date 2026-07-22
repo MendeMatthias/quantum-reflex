@@ -1,0 +1,36 @@
+# /etc/systemd/system/quantum-reflex.service
+# Hardened unit for the Quantum Reflex server (game + qID + leaderboard, one
+# origin). Secrets live in the EnvironmentFile, never in this unit.
+# Assumes the project is at /opt/quantum-reflex and bun at /usr/local/bin/bun.
+[Unit]
+Description=Quantum Reflex (qID Connect showcase game + leaderboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=quantum-reflex
+Group=quantum-reflex
+WorkingDirectory=/opt/quantum-reflex
+EnvironmentFile=/etc/quantum-reflex.env
+ExecStart=/usr/local/bin/bun server.mjs
+Restart=on-failure
+RestartSec=2
+
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# The SQLite db (qID nonces/accounts + leaderboard) is the only writable path.
+# Set QID_DB=/var/lib/quantum-reflex/qr.sqlite to match StateDirectory.
+ReadWritePaths=/var/lib/quantum-reflex
+StateDirectory=quantum-reflex
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target
