@@ -12,8 +12,8 @@ phone, which is why the dialog just said "Waiting for your wallet." On the real
 domain the round trip closes and the scan works.
 
 ## 0. Prereqs (one time)
-- The repo must be on GitHub so the VM can pull it. Set `REPO_URL` at the top of
-  `azure-bootstrap.sh` to that URL (e.g. `https://github.com/MendeMatthias/quantum-reflex.git`).
+- The repo is already on GitHub and wired into the bootstrap:
+  `https://github.com/MendeMatthias/quantum-reflex` (public, no token needed).
 - You control DNS for `qid.dev`.
 
 ## 1. Create the VM (Portal → Virtual machines → Create)

@@ -15,7 +15,7 @@ set -euo pipefail
 
 # ---- EDIT THESE TWO ---------------------------------------------------------
 DOMAIN="play.qid.dev"
-REPO_URL="https://github.com/OWNER/quantum-reflex.git"   # set after the repo exists
+REPO_URL="https://github.com/MendeMatthias/quantum-reflex.git"
 # -----------------------------------------------------------------------------
 
 APP=/opt/quantum-reflex
