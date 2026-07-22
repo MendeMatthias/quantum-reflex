@@ -43,20 +43,27 @@
   .wrap { max-width: 540px; margin: 0 auto; }
 
   header { text-align: center; padding: 34px 4px 12px; }
-  .kicker {
-    display: inline-block; margin-bottom: 14px;
-    font-size: 11px; letter-spacing: .26em; text-transform: uppercase; font-weight: 700;
-    color: var(--accent-2);
-    padding: 6px 13px; border: 1px solid var(--line); border-radius: 999px;
-    background: var(--glass); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-  }
+  /* Top bar: back to qID, jump to the leaderboard, and the persistent connect button. */
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; min-height: 44px; }
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+  .topbar-left a { color: var(--muted); font-size: 14px; font-weight: 600; }
+  .topbar-left a:hover { color: var(--ink); text-decoration: none; }
+  .topbar-left .back { color: var(--ink); }
+  .topbar-connect { display: flex; align-items: center; gap: 8px; }
+  .topbar-connect #account:empty, .topbar-connect #signin:empty { display: none; }
+
+  /* Animated 5-colour title — the gradient drifts continuously. */
   h1 {
     margin: 0;
     font-size: clamp(34px, 9vw, 52px);
     font-weight: 850; line-height: 1.02; letter-spacing: -.03em;
-    background: linear-gradient(96deg, #fff 0%, var(--accent-2) 50%, var(--accent) 92%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+    background-image: linear-gradient(100deg, #33e6ff, #895cff, #ff5cc8, #3d7bff, #00e58c, #33e6ff);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: titleflow 6s ease-in-out infinite;
   }
+  @keyframes titleflow { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
   .tag { margin: 12px auto 0; max-width: 30ch; color: var(--muted); font-size: 15px; }
 
   /* Reaction stage. Background flips are INSTANT (no transition) so green is not
@@ -117,6 +124,8 @@
   .rounds { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 16px 0 4px; }
   .pill { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); background: var(--glass-2); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; }
   .pill.best { color: var(--go); border-color: rgba(0,229,140,.4); box-shadow: 0 0 20px -6px rgba(0,229,140,.5); }
+  .pill.early { color: var(--wait); border-color: rgba(255,45,85,.4); }
+  .pill.dropped { opacity: .42; text-decoration: line-through; box-shadow: none; }
 
   .claim { margin-top: 14px; display: grid; gap: 12px; }
   .cta {
@@ -155,7 +164,7 @@
   .chip .coll { color: var(--muted); font-size: 11px; font-weight: 600; }
   .chip.sel .coll { color: #cdbcff; }
 
-  #account:not(:empty) { margin-top: 18px; display: flex; justify-content: center; }
+  #account:not(:empty), #signin:not(:empty) { display: flex; align-items: center; }
 
   /* Leaderboard */
   .board { margin-top: 26px; }
@@ -187,8 +196,17 @@
 </head>
 <body>
 <div class="wrap">
+  <div class="topbar">
+    <div class="topbar-left">
+      <a class="back" href="https://qid.dev" title="Back to qID">‹ qID</a>
+      <a href="#board">Leaderboard</a>
+    </div>
+    <div class="topbar-connect">
+      <div id="account"></div>
+      <div id="signin"></div>
+    </div>
+  </div>
   <header>
-    <div class="kicker">Post-quantum · BTX</div>
     <h1>Quantum Reflex</h1>
     <p class="tag">How fast are your reflexes? Can you out-react a quantum computer?</p>
   </header>
@@ -196,17 +214,16 @@
   <div id="stage" class="stage state-idle" role="button" tabindex="0" aria-label="Reaction stage. Activate to start.">
     <div class="stage-inner">
       <div id="big" class="big" aria-live="assertive">Tap to start</div>
-      <div id="sub" class="sub">5 rounds. Tap the instant it turns green.</div>
+      <div id="sub" class="sub">5 rounds, your best 4 count. Tap the instant it turns green.</div>
     </div>
   </div>
   <div id="dots" class="dots" aria-hidden="true"></div>
 
   <section id="summary" class="card" hidden>
-    <div class="avg"><span id="avgMs">0</span><span class="unit"> ms avg</span></div>
+    <div class="avg"><span id="avgMs">0</span><span class="unit"> ms · best 4 of 5</span></div>
     <div id="rankLine" class="rankline"></div>
     <div id="rounds" class="rounds"></div>
     <div class="claim">
-      <div id="signin" hidden></div>
       <div id="claimWrap" class="claim">
         <div id="relicWrap" hidden>
           <div class="relic-label">Claim under the name you forged into your relic:</div>
@@ -222,9 +239,7 @@
     </div>
   </section>
 
-  <div id="account"></div>
-
-  <section class="board">
+  <section class="board" id="board">
     <h2>Global leaderboard</h2>
     <div id="boardMeta" class="meta">Loading…</div>
     <table>
@@ -245,6 +260,7 @@
   const MIN_DELAY = 1500, MAX_DELAY = 4500;   // 1.5 to 4.5s before green
   const RESULT_HOLD = 900;                     // show a round's ms before the next
   const SERVER_MIN = 80, SERVER_MAX = 2000;    // matches the /score clamp
+  const EARLY_PENALTY = SERVER_MAX;            // an early tap scores this — droppable as the worst round
 
   // -------------------------------------------------------------------- refs
   const $ = (id) => document.getElementById(id);
@@ -260,6 +276,7 @@
   let state = S.IDLE;
   let round = 0;
   let times = [];
+  let earlyFlags = [];       // parallel to times: was this round an early (pre-green) tap?
   let greenAt = 0;
   let armTimer = null, holdTimer = null;
   let pendingScore = null;
@@ -281,7 +298,7 @@
     }
   }
   function begin() {
-    times = []; round = 0;
+    times = []; earlyFlags = []; round = 0;
     summary.hidden = true;
     youAre.textContent = "";
     armRound();
@@ -303,13 +320,21 @@
   }
   function tooEarly() {
     clearTimeout(armTimer);
+    times.push(EARLY_PENALTY);   // this round scores the max; no free retry
+    earlyFlags.push(true);
     state = S.EARLY;
-    setStage("state-early", "Too early, wait for it", "That round restarts");
-    holdTimer = setTimeout(armRound, RESULT_HOLD + 250);
+    setStage("state-early", "Too early!", "Counts as a miss — your worst round gets dropped");
+    renderDots();
+    holdTimer = setTimeout(() => {
+      round++;
+      if (round < ROUNDS) armRound();
+      else finish();
+    }, RESULT_HOLD + 250);
   }
   function recordTap() {
     const ms = Math.round(performance.now() - greenAt);
     times.push(ms);
+    earlyFlags.push(false);
     state = S.RESULT;
     setStage("state-round", `${ms} ms`, round + 1 < ROUNDS ? "Nice. Next round coming up" : "Last one done");
     renderDots();
@@ -330,8 +355,15 @@
 
   function finish() {
     state = S.DONE;
-    const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
-    setStage("state-done", `${avg} ms`, "Your average over 5 rounds");
+    // Fair AND hard to game: average the best 4 of 5, dropping the single worst
+    // round. One early tap (or one slow round) is forgiven; a second one bites.
+    const sorted = [...times].sort((a, b) => a - b);
+    const best4 = sorted.slice(0, ROUNDS - 1);
+    const avg = Math.round(best4.reduce((a, b) => a + b, 0) / best4.length);
+    const droppedIndex = times.indexOf(Math.max(...times)); // the round left out
+    const fastest = Math.min(...times);
+
+    setStage("state-done", `${avg} ms`, "Average of your best 4 of 5");
     renderDots();
 
     avgMs.textContent = avg;
@@ -339,24 +371,26 @@
     rankLine.append(document.createTextNode(verdict(avg) + " "));
     const ref = document.createElement("span");
     ref.className = "rankref";
-    ref.textContent = "Human floor is about 100 ms, average about 250 ms.";
+    ref.textContent = "Best 4 of 5 count; your worst round is dropped.";
     rankLine.append(ref);
 
-    const best = Math.min(...times);
     roundsEl.innerHTML = "";
-    times.forEach((t) => {
+    times.forEach((t, i) => {
       const p = document.createElement("span");
-      p.className = "pill" + (t === best ? " best" : "");
-      p.textContent = t + " ms";
+      const early = earlyFlags[i];
+      const dropped = i === droppedIndex;
+      p.className =
+        "pill" + (!early && t === fastest ? " best" : "") + (early ? " early" : "") + (dropped ? " dropped" : "");
+      p.textContent = early ? "too early" : t + " ms";
       roundsEl.appendChild(p);
     });
 
     summary.hidden = false;
     summary.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
-    // Submit path: if the average is out of the accepted range, don't post.
+    // Submit path: if the score is out of the accepted range, don't post.
     if (avg < SERVER_MIN || avg > SERVER_MAX) {
-      youAre.textContent = "That average was out of range. Play again.";
+      youAre.textContent = "That score was out of range. Play again.";
       claimWrap.hidden = true;
       return;
     }
@@ -555,6 +589,7 @@
   // claim if a run is waiting. Idempotent — safe to call from both widgets.
   function handleSignedIn(s) {
     signedInAddress = (s && s.address) ? s.address : (signedInAddress || true);
+    $("signin").style.display = "none";   // hide the top "Sign in" button; the account chip takes over
     ensureRelicNames();   // warm the relic lookup while the player is still here
     offerClaim();
   }
@@ -571,7 +606,7 @@
     connect = mountQidConnect($("signin"), {
       api: "/qid",
       appName: "Quantum Reflex",
-      trigger: false,                 // we open it from the claim button
+      trigger: true,                  // persistent "Sign in with qID" button, top-right
       onSignedIn: () => { account.refresh(); handleSignedIn(); },
     });
 
