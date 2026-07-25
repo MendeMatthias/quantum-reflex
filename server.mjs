@@ -17,7 +17,8 @@
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -383,9 +384,63 @@ async function serveStatic(req, res, path) {
 }
 
 // ---------------------------------------------------------------------------
+// Security headers (audit 2026-07-25: this server shipped none, while the
+// dashboard already had a full set — and this origin hosts a qID login, so an
+// unframed login page was clickjackable).
+//
+// The page carries ONE inline <style> and ONE inline <script type="module">, so
+// a strict policy needs their sha256 hashes rather than 'unsafe-inline'. They
+// are computed once at boot from the file on disk, so editing index.html
+// regenerates the policy automatically on the next deploy — no hand-maintained
+// hash to drift out of date. If the file can't be read we fall back to a
+// policy that still blocks framing, external scripts and object embeds.
+// ---------------------------------------------------------------------------
+function inlineHashes(html, tag) {
+  const re = new RegExp(`<${tag}(?![^>]*\\bsrc=)[^>]*>([\\s\\S]*?)</${tag}>`, "gi");
+  const out = [];
+  for (const m of html.matchAll(re)) {
+    out.push(`'sha256-${createHash("sha256").update(m[1], "utf8").digest("base64")}'`);
+  }
+  return out;
+}
+
+const CSP = (() => {
+  let scripts = [];
+  let styles = [];
+  try {
+    const html = readFileSync(join(PUBLIC_DIR, "index.html"), "utf8");
+    scripts = inlineHashes(html, "script");
+    styles = inlineHashes(html, "style");
+  } catch {
+    /* fall through to the no-inline policy below */
+  }
+  return [
+    "default-src 'self'",
+    `script-src 'self'${scripts.length ? " " + scripts.join(" ") : ""}`,
+    `style-src 'self'${styles.length ? " " + styles.join(" ") : ""}`,
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join("; ");
+})();
+
+function securityHeaders(res) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("Content-Security-Policy", CSP);
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 const server = createServer((req, res) => {
+  securityHeaders(res);
   let path, query;
   try {
     const url = new URL(req.url, "http://internal");
