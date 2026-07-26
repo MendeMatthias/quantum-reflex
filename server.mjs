@@ -416,7 +416,10 @@ const CSP = (() => {
   }
   return [
     "default-src 'self'",
-    `script-src 'self'${scripts.length ? " " + scripts.join(" ") : ""}`,
+    // https://qid.dev is required: index.html imports the hosted qID Connect
+    // widget as a cross-origin module. Omit it and the Sign in with qID button
+    // simply never renders, with the only clue a console warning.
+    `script-src 'self' https://qid.dev${scripts.length ? " " + scripts.join(" ") : ""}`,
     `style-src 'self'${styles.length ? " " + styles.join(" ") : ""}`,
     "img-src 'self' data:",
     "font-src 'self' data:",

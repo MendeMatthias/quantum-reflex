@@ -77,6 +77,32 @@ export function createQidConnect(options = {}) {
 
   const secureCookies = origin.startsWith("https:");
 
+  // Production footgun guard (audit I4, 2026-07-25). The in-memory stores are
+  // reference implementations: they are per-process, so on a multi-instance or
+  // serverless deployment a nonce issued by instance A is unknown to instance B
+  // — replay protection stops being global and accounts vanish on restart. That
+  // failure is silent and looks like flaky sign-ins, not like a security bug.
+  // Warn loudly in production unless the operator explicitly opted in.
+  if (
+    typeof process !== "undefined" &&
+    process.env?.NODE_ENV === "production" &&
+    process.env?.QID_ALLOW_MEMORY_STORES !== "1"
+  ) {
+    const inMemory = [
+      options.nonceStore == null && "nonceStore",
+      options.accounts == null && "accounts",
+    ].filter(Boolean);
+    if (inMemory.length) {
+      console.warn(
+        `[qid-connect] WARNING: using the in-memory ${inMemory.join(" + ")} in production. ` +
+          "These are per-process: with more than one instance, replay protection is not shared " +
+          "and sessions/accounts are lost on restart. Pass a shared store (SqliteNonceStore, or " +
+          "Redis/SQL implementing the interfaces in stores.js). Set QID_ALLOW_MEMORY_STORES=1 to " +
+          "silence this if you are deliberately running a single process."
+      );
+    }
+  }
+
   // Step 1: issue a challenge. Returns the sign-in request the frontend hands
   // to the wallet. `request` is the transport envelope: the frozen v1
   // challenge plus proof_url, which tells a remote signer (phone wallet
@@ -143,10 +169,16 @@ export function createQidConnect(options = {}) {
     }
 
     // The verified proof rides along as context so an accounts adapter can
-    // persist proof-derived identity fields. recovery_leaf_hash is safe to
-    // trust here: the verifier rebuilt the address from login_pubkey plus
-    // recovery_leaf_hash, so a wrong hash cannot have verified. Adapters that
-    // only need the address ignore the third argument (both built-ins do).
+    // persist proof-derived fields. What recovery_leaf_hash is: the leaf hash
+    // THIS address commits to (the verifier rebuilt the address from
+    // login_pubkey plus this hash, so the signer cannot misreport their own).
+    // What it is NOT: proof of control of the recovery key, or a wallet-unique
+    // identifier. It is signer-chosen and public on chain (a P2MR spend reveals
+    // the sibling hash), so anyone can build an address around a leaf hash they
+    // saw. Never look accounts up by it, merge on it, or gate one-per-wallet
+    // rules on it — that is an account-takeover path. The address is the
+    // account. Adapters that only need the address ignore the third argument
+    // (both built-ins do).
     const recoveryLeafHash =
       typeof proof.recovery_leaf_hash === "string"
         ? proof.recovery_leaf_hash.toLowerCase()

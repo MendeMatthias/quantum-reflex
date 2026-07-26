@@ -1,6 +1,6 @@
 {
   "name": "@qid/connect-server",
-  "version": "1.5.2",
+  "version": "1.6.4",
   "description": "qID Connect server SDK: issue challenges, verify post-quantum ownership proofs, create accounts by BTX address, issue sessions.",
   "type": "module",
   "private": true,

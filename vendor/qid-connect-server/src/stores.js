@@ -111,9 +111,12 @@ function timingSafeEqualStr(a, b) {
 //   getOrCreate(address, now, context)  return the account, creating it on
 //                         first sign-in. When the call comes from a verified
 //                         proof, context is { proof, recoveryLeafHash } so an
-//                         adapter can persist proof-derived identity fields
-//                         (recoveryLeafHash is stable across login-key
-//                         rotation). poll() resolves an account created
+//                         adapter can persist proof-derived fields.
+//                         recoveryLeafHash is stable across login-key rotation
+//                         but is NOT an identity key: it is signer-chosen and
+//                         public on chain, so never look up, merge, or
+//                         rate-limit accounts by it (see core.js).
+//                         poll() resolves an account created
 //                         moments earlier by the proof submission, so it may
 //                         call without context; never null out a stored field
 //                         on a context-free call. Ignore the argument if you

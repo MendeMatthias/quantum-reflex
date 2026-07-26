@@ -3,7 +3,7 @@
 This directory is a **verbatim copy** of `packages/server` from the
 [qid-connect](../../../qid-connect) monorepo, pinned at:
 
-    @qid/connect-server  v1.5.2
+    @qid/connect-server  v1.6.4
 
 It is vendored (not forked) so Quantum Reflex deploys as a single self-contained
 project without needing the qID Connect monorepo workspace on the box. The qID
