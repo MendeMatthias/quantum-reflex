@@ -420,7 +420,12 @@ const CSP = (() => {
     // widget as a cross-origin module. Omit it and the Sign in with qID button
     // simply never renders, with the only clue a console warning.
     `script-src 'self' https://qid.dev${scripts.length ? " " + scripts.join(" ") : ""}`,
-    `style-src 'self'${styles.length ? " " + styles.join(" ") : ""}`,
+    // 'unsafe-inline' and NOT hashes: the qID Connect widget injects its own
+    // stylesheet at runtime (createElement("style")), and it is loaded hosted and
+    // unpinned, so any widget release would change that style's hash and break
+    // the dialog's rendering. Note a hash in this directive makes browsers ignore
+    // 'unsafe-inline' entirely, so the two cannot be combined.
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "font-src 'self' data:",
     "connect-src 'self'",
