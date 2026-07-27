@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="dark" />
 <meta name="theme-color" content="#000000" />
-<title>Quantum Reflex</title>
+<title>Quantum Reflex: out-react a quantum computer</title>
+<link rel="preconnect" href="https://qid.dev" crossorigin>
+<link rel="modulepreload" href="https://qid.dev/connect/widget.js" crossorigin>
 <meta name="description" content="How fast are your reflexes? Can you out-react a quantum computer? Play 5 rounds, sign in with your BTX wallet, land on the global leaderboard." />
 <link rel="canonical" href="https://play.qid.dev/" />
 
@@ -15,7 +17,7 @@
 <meta property="og:title" content="Quantum Reflex: out-react a quantum computer" />
 <meta property="og:description" content="A post-quantum reaction game on BTX. Play 5 rounds, sign in with your BTX wallet through qID Connect, and land on the global leaderboard. No email, no password." />
 <meta property="og:url" content="https://play.qid.dev/" />
-<meta property="og:image" content="https://play.qid.dev/og.png?v=1" />
+<meta property="og:image" content="https://play.qid.dev/og.png?v=2" />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
@@ -25,7 +27,7 @@
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Quantum Reflex: out-react a quantum computer" />
 <meta name="twitter:description" content="Sign in with your BTX wallet through qID Connect and land on the global leaderboard. No email, no password." />
-<meta name="twitter:image" content="https://play.qid.dev/og.png?v=1" />
+<meta name="twitter:image" content="https://play.qid.dev/og.png?v=2" />
 <meta name="twitter:image:alt" content="Quantum Reflex: a neon Higgs field particle collision with the qID logo" />
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
@@ -205,7 +207,7 @@
   tr.top1 td.rank { color: var(--gold); }
   .empty { color: var(--muted); text-align: center; padding: 22px; }
 
-  footer { text-align: center; color: #59617d; font-size: 12px; margin-top: 30px; line-height: 1.7; }
+  footer { text-align: center; color: #8b96b5; font-size: 12px; margin-top: 30px; line-height: 1.7; }
   footer b { color: var(--muted); font-weight: 600; }
   a { color: var(--accent-2); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -250,7 +252,7 @@
           <div class="relic-label">Claim under the name you forged into your relic:</div>
           <div id="relicChips" class="chips"></div>
         </div>
-        <input id="nameInput" class="name" maxlength="32" placeholder="Name for the board (optional)" autocomplete="off" />
+        <input id="nameInput" class="name" maxlength="32" placeholder="Name for the board (optional)" aria-label="Name for the leaderboard (optional)" autocomplete="off" />
         <button id="claimBtn" class="cta">Sign in with qID to claim your spot</button>
         <button id="submitBtn" class="cta" hidden>Add me to the leaderboard</button>
       </div>
@@ -264,7 +266,7 @@
     <h2>Global leaderboard</h2>
     <div id="boardMeta" class="meta">Loading…</div>
     <table>
-      <thead><tr><th>#</th><th>Player</th><th style="text-align:right">Best</th></tr></thead>
+      <thead><tr><th scope="col">#</th><th scope="col">Player</th><th scope="col" style="text-align:right">Best</th></tr></thead>
       <tbody id="boardBody"></tbody>
     </table>
   </section>
@@ -407,7 +409,7 @@
     });
 
     summary.hidden = false;
-    summary.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    summary.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
 
     // Submit path: if the score is out of the accepted range, don't post.
     if (avg < SERVER_MIN || avg > SERVER_MAX) {
@@ -505,7 +507,10 @@
   // or Enter, but not while typing a name.
   stage.addEventListener("pointerdown", (e) => { e.preventDefault(); onTap(); });
   document.addEventListener("keydown", (e) => {
-    if (e.target === nameInput) return;
+    // Keyboard users must still be able to activate links, buttons and the
+    // sign-in dialog: the game shortcut only applies when focus is NOT on an
+    // interactive element (previously it swallowed Enter/Space page-wide).
+    if (e.target instanceof Element && e.target.closest("a, button, input, textarea, select, [role=dialog]")) return;
     if (e.code === "Space" || e.code === "Enter") {
       if (state === S.DONE || state === S.IDLE || state === S.WAIT || state === S.GO) {
         e.preventDefault();

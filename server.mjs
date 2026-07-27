@@ -16,9 +16,10 @@
 // SPDX-License-Identifier: MIT
 
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { mkdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -347,7 +348,14 @@ const CONTENT_TYPES = {
   ".webmanifest": "application/manifest+json",
   ".json": "application/json; charset=utf-8",
   ".woff2": "font/woff2",
+  // robots.txt / sitemap.xml: without these entries the allowlist 404'd them,
+  // which made this the only qID surface crawlers could not read a policy for.
+  ".txt": "text/plain; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8",
 };
+
+// Text types worth compressing (images/fonts are already compressed formats).
+const COMPRESSIBLE = new Set([".html", ".js", ".css", ".svg", ".json", ".webmanifest", ".txt", ".xml"]);
 
 async function serveStatic(req, res, path) {
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -370,13 +378,31 @@ async function serveStatic(req, res, path) {
     return res.end("not found\n");
   }
   try {
-    const buf = await readFile(full);
-    res.statusCode = 200;
+    const [buf, st] = await Promise.all([readFile(full), stat(full)]);
+    // Weak validator from mtime+size: "no-cache" only works as revalidation if
+    // there is something to revalidate against, otherwise every repeat view
+    // re-downloads the full body.
+    const etag = `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+    res.setHeader("ETag", etag);
     res.setHeader("Content-Type", type);
     // The page is tiny and must always reflect the latest deploy; don't cache
     // the HTML. Hashed assets could cache longer, but we have none yet.
     res.setHeader("Cache-Control", ext === ".html" ? "no-cache" : "public, max-age=3600");
-    return res.end(req.method === "HEAD" ? undefined : buf);
+    if (req.headers["if-none-match"] === etag) {
+      res.statusCode = 304;
+      return res.end();
+    }
+    res.statusCode = 200;
+    // gzip text responses when the client asks; the App Service does not
+    // compress for us, and identity encoding tripled every transfer.
+    const wantsGzip = /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""));
+    const body = wantsGzip && COMPRESSIBLE.has(ext) ? gzipSync(buf) : buf;
+    if (body !== buf) res.setHeader("Content-Encoding", "gzip");
+    res.setHeader("Vary", "Accept-Encoding");
+    // Real length on HEAD too: content-length: 0 for a real file made
+    // size-checking unfurl bots treat assets as empty.
+    res.setHeader("Content-Length", body.length);
+    return res.end(req.method === "HEAD" ? undefined : body);
   } catch {
     res.statusCode = 404;
     return res.end("not found\n");
@@ -441,6 +467,7 @@ function securityHeaders(res) {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   res.setHeader("Content-Security-Policy", CSP);
 }
 
