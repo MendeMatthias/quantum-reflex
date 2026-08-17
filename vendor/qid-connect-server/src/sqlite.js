@@ -32,7 +32,13 @@
 //
 // SPDX-License-Identifier: MIT
 
-const CLAIM_GRACE_MS = 30 * 1000; // re-claim window for a lost 'done' response
+// Re-claim window for a lost 'done' response. MUST match stores.js — the two
+// implementations are held to one shared conformance suite, so a drift here shows up
+// as a store-specific test failure rather than as a behaviour difference in production.
+// Widened from 30s because it now also covers the human address-confirmation step
+// (poll reports the address, the user accepts, poll mints). Re-claiming still needs
+// the pollSecret, so this widens how long that one browser has, not who can claim.
+const CLAIM_GRACE_MS = 120 * 1000;
 
 export class SqliteNonceStore {
   constructor(db, { ttlMs = 10 * 60 * 1000, table = "qid_nonces" } = {}) {

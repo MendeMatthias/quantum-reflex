@@ -178,7 +178,15 @@ export function qidMiddleware(qid, { basePath = "" } = {}) {
         if (!originAllowed(req, qid)) {
           return sendJson(res, 403, { status: "bad_origin" });
         }
-        const result = await qid.poll(query.get("nonce"), query.get("secret"));
+        // `confirm=1` is the user's acceptance of the address poll() reported on the
+        // previous call. Without it the server reports the address and mints nothing —
+        // see the address confirmation gate in core.js.
+        const result = await qid.poll(query.get("nonce"), query.get("secret"), {
+          confirm: query.get("confirm") === "1",
+        });
+        if (result.status === "confirm") {
+          return sendJson(res, 200, { status: "confirm", address: result.address });
+        }
         if (result.status !== "done") return sendJson(res, 200, { status: result.status });
         appendSetCookie(res, sessionCookie(qid, result.token, qid.sessionMaxAgeMs));
         return sendJson(res, 200, {

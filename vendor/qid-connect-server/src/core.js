@@ -56,6 +56,7 @@ export function createQidConnect(options = {}) {
     accounts = new MemoryAccounts(),
     cookieName = "qid_session",
     apiPath = "/qid",
+    confirmAddress = true,
   } = options;
 
   if (typeof originOption !== "string" || !/^https?:\/\/[^\s/]+$/.test(originOption)) {
@@ -76,6 +77,8 @@ export function createQidConnect(options = {}) {
   }
 
   const secureCookies = origin.startsWith("https:");
+  let warnedStaleClient = false;            // one warning per process, not per poll
+  const staleClientPolls = new Map();       // nonce -> confirm-stage polls, bounded below
 
   // Production footgun guard (audit I4, 2026-07-25). The in-memory stores are
   // reference implementations: they are per-process, so on a multi-instance or
@@ -139,7 +142,33 @@ export function createQidConnect(options = {}) {
   // session token. All verdicts come from the frozen verifier; the only
   // pre-check added here is "did we issue this nonce", so unknown-nonce spam
   // is rejected before any post-quantum math runs.
-  async function verify(proof, { now = Date.now() } = {}) {
+  async function verify(proofInput, { now = Date.now() } = {}) {
+    // BOUNDARY SNAPSHOT — everything below reads `proof`, never `proofInput`.
+    //
+    // The frozen verifier reads the same fields repeatedly (proof.address 5x,
+    // proof.challenge.nonce/ts/rp_origin 4-5x each) and it is hash-pinned
+    // byte-identical across four repos, so it can never be changed. Worse,
+    // submitProof() below re-reads proof.challenge.nonce AFTER verify() already
+    // consumed a nonce, so a caller handing us a live accessor object could have
+    // the signature verify over one nonce while the verified address is parked
+    // under a DIFFERENT one — a cross-device takeover primitive.
+    //
+    // No shipped route can do this today: both HTTP adapters feed JSON.parse
+    // output and parsed JSON cannot carry getters. This clone makes the property
+    // structural instead of dependent on "every caller always hands us JSON",
+    // and it is the only place the fix can live without touching the frozen file.
+    //
+    // It must be DEEP: a shallow copy keeps the same proof.challenge reference
+    // and leaves the nonce split wide open. Totality is preserved — an input
+    // that will not clone (circular, BigInt, a throwing getter) returns a
+    // discriminated reason rather than propagating, because every caller of
+    // verify() treats a throw as a 500.
+    let proof;
+    try {
+      proof = JSON.parse(JSON.stringify(proofInput ?? null));
+    } catch {
+      return { ok: false, reason: "bad_proof" };
+    }
     const nonce = proof?.challenge?.nonce;
     if (typeof nonce !== "string" || !(await nonceStore.has(nonce, now))) {
       return { ok: false, reason: "nonce_unknown" };
@@ -158,6 +187,24 @@ export function createQidConnect(options = {}) {
       now,
     });
     if (!result.ok) return { ok: false, reason: result.reason };
+
+    // CANONICALIZE THE PRIMARY KEY. The verifier returns the caller's address
+    // string verbatim, and bech32m is case-insensitive (BIP-173 explicitly
+    // permits the all-uppercase form, precisely for QR alphanumeric mode — which
+    // is this product's flagship flow). "The address is the account", so an
+    // uppercase proof otherwise mints a SECOND account for the same wallet: two
+    // rows in both shipped stores, split balances and history, and any
+    // address-keyed denylist or one-per-wallet rule silently bypassed by
+    // re-signing in the other case. It also hands the user a dead session —
+    // signSession writes sub:"BTX1…" while verifySessionToken requires a "btx1"
+    // prefix, so /session 401s the cookie /verify just set. That asymmetry is
+    // itself the proof the lowercase invariant was always intended.
+    //
+    // Safe unconditionally: the frozen verifier rejects MIXED case outright, so
+    // by here the string is all-lower or all-upper and both decode to the same
+    // 32-byte witness program. The precedent is directly below — recovery_leaf_hash
+    // is already lowercased; this applies the same discipline to the primary key.
+    const address = result.address.toLowerCase();
 
     // Replay: consume the nonce LAST, only after the signature verified, and
     // atomically. A lost race (a concurrent replay) makes consume return false
@@ -183,17 +230,20 @@ export function createQidConnect(options = {}) {
       typeof proof.recovery_leaf_hash === "string"
         ? proof.recovery_leaf_hash.toLowerCase()
         : null;
-    const account = await accounts.getOrCreate(result.address, now, {
+    const account = await accounts.getOrCreate(address, now, {
       proof,
       recoveryLeafHash,
     });
     const token = signSession({
-      address: result.address,
+      address,
       secret: sessionSecret,
       maxAgeMs: sessionMaxAgeMs,
       now,
     });
-    return { ok: true, address: result.address, account, token };
+    // `nonce` is echoed back so submitProof() can park the address under the
+    // EXACT nonce whose signature was just verified and consumed, instead of
+    // re-reading proof.challenge.nonce a third time (see submitProof below).
+    return { ok: true, address, account, token, nonce };
   }
 
   // Step 2, cross-device variant: a remote signer (phone wallet) submits the
@@ -204,18 +254,69 @@ export function createQidConnect(options = {}) {
   async function submitProof(proof, { now = Date.now() } = {}) {
     const result = await verify(proof, { now });
     if (!result.ok) return { ok: false, reason: result.reason };
-    await nonceStore.complete(proof.challenge.nonce, result.address, now);
+    // Park under result.nonce — the nonce verify() actually verified against and
+    // consumed — NOT a fresh read of proof.challenge.nonce. The old third read
+    // let a live accessor object park a verified address under a different,
+    // still-live nonce that an attacker's browser was polling. verify()'s deep
+    // snapshot already blocks that; using the returned value makes the two
+    // agree by construction rather than by coincidence.
+    await nonceStore.complete(result.nonce, result.address, now);
     return { ok: true, address: result.address };
   }
 
   // Step 2b: the browser polls with the nonce and its poll secret. When the
   // proof has arrived, it gets the session. A done claim is single use.
-  async function poll(nonce, pollSecret, { now = Date.now() } = {}) {
+  async function poll(nonce, pollSecret, { now = Date.now(), confirm = false } = {}) {
     if (typeof nonce !== "string" || typeof pollSecret !== "string") {
       return { status: "expired" };
     }
     const claimed = await nonceStore.claim(nonce, pollSecret, now);
     if (claimed.status !== "done") return { status: claimed.status };
+
+    // ADDRESS CONFIRMATION GATE — the fix for the QR sign-in takeover.
+    //
+    // Nothing binds complete() to the browser that asked for the challenge, and
+    // nothing can: the QR must carry the whole challenge for a wallet to sign it,
+    // so a bystander who reads the nonce off the screen holds exactly what the
+    // legitimate signer holds. They submit their own valid proof to /proof (which
+    // is deliberately exempt from the login-CSRF origin guard because it really is
+    // cross-device), and the victim's browser then polls with its own pollSecret
+    // and is handed a session for the ATTACKER's address. Reproduced end to end
+    // over real HTTP through the shipped middleware: the victim ends up operating
+    // inside the attacker's account, which for a wallet means depositing into it.
+    //
+    // First-writer-wins in complete() does NOT fix this and was tested before it
+    // was written: consume() already makes the nonce single-use, so the attacker
+    // IS the first writer and the victim's own wallet is rejected with
+    // nonce_unknown. The only sound fix is out-of-band: show the address to the
+    // human before minting anything, and let them refuse it.
+    //
+    // So poll() now reports the address WITHOUT minting a session, and the client
+    // must come back with confirm:true once the user has accepted it. Same-device
+    // /verify is unaffected — it mints to the origin-guarded caller that just
+    // proved possession, so there is no third party to confuse.
+    if (confirmAddress && confirm !== true) {
+      // Make an un-upgraded client LOUD instead of silent. A widget bundle that predates this
+      // release never sends confirm=1, so it polls a completed nonce forever and sign-in simply
+      // stops working — no error, no log, nothing in the client console. That is the worst way
+      // for a breaking change to land. Count repeat confirm-stage polls on one nonce and warn
+      // once: a real user takes a few seconds to read an address, not dozens of polls.
+      // Counted per-process, not in the store: this is a diagnostic, and a store adapter is not
+      // obliged to round-trip an extra field. Undercounting across instances only delays a warning.
+      staleClientPolls.set(nonce, (staleClientPolls.get(nonce) || 0) + 1);
+      if (staleClientPolls.size > 512) staleClientPolls.clear();   // bounded: never a leak
+      if (staleClientPolls.get(nonce) === 8 && !warnedStaleClient) {
+        warnedStaleClient = true;
+        console.warn(
+          "[qid-connect] A client has polled the same completed nonce 8 times without sending " +
+          "confirm=1. That is what a pre-1.7.0 widget does: QR sign-in will never complete for it. " +
+          "Update @qid/connect-widget, or handle the `confirm` status in your own poll loop " +
+          "(GET /qid/poll?...&confirm=1). See CHANGELOG 1.7.0. Set confirmAddress:false only if you " +
+          "have your own address-confirmation UX — it re-opens the QR fixation exposure."
+        );
+      }
+      return { status: "confirm", address: claimed.address };
+    }
     const account = await accounts.getOrCreate(claimed.address, now);
     const token = signSession({
       address: claimed.address,

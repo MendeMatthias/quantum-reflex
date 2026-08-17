@@ -191,7 +191,14 @@ export function qidNextHandlers(qid) {
         if (pollOrigin && pollOrigin !== qid.origin) {
           return json(403, { status: "bad_origin" });
         }
-        const result = await qid.poll(url.searchParams.get("nonce"), url.searchParams.get("secret"));
+        // `confirm=1` is the user's acceptance of the address poll() reported on the
+        // previous call (address confirmation gate, core.js).
+        const result = await qid.poll(url.searchParams.get("nonce"), url.searchParams.get("secret"), {
+          confirm: url.searchParams.get("confirm") === "1",
+        });
+        if (result.status === "confirm") {
+          return json(200, { status: "confirm", address: result.address });
+        }
         if (result.status !== "done") return json(200, { status: result.status });
         return json(
           200,
