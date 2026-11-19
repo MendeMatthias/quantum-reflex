@@ -5,7 +5,7 @@ VM, and every step here is doable from the **Azure Portal** in the browser
 (portal.azure.com). No local terminal needed. Everything is automated by
 [`azure-bootstrap.sh`](./azure-bootstrap.sh) — you paste it once.
 
-Why this fixes the login: qID sign-in only completes on a **public** origin,
+Why this fixes the login: qID Connect sign-in only completes on a **public** origin,
 because the QR tells the wallet to POST the proof back to
 `https://play.qid.dev/qid/proof`. On localhost that address is unreachable from a
 phone, which is why the dialog just said "Waiting for your wallet." On the real
