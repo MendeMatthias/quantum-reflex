@@ -411,7 +411,7 @@ async function serveStatic(req, res, path) {
 
 // ---------------------------------------------------------------------------
 // Security headers (audit 2026-07-25: this server shipped none, while the
-// dashboard already had a full set — and this origin hosts a qID login, so an
+// dashboard already had a full set — and this origin hosts a qID Connect sign-in, so an
 // unframed login page was clickjackable).
 //
 // The page carries ONE inline <style> and ONE inline <script type="module">, so
